@@ -1,0 +1,20 @@
+# SConscript file for anyui project
+#
+# This file is created and owned by anyui.
+#
+# COPYRIGHT 2025 anyui Team
+# All rights reserved.
+#
+# https://anyui.tech/
+#
+# Author: anyui Team
+import os
+
+cwd = os.getcwd()
+src = Glob('*.c')
+
+for root, dirs, files in os.walk(cwd):
+    for dir in dirs:
+        src += Glob(os.path.join(dir, '*.c'))
+
+Return('src')

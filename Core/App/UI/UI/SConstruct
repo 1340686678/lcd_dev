@@ -1,0 +1,212 @@
+# SConstruct - SConscript file for anyui project
+#
+# This file is created and owned by anyui. Commercial use without authorization is strictly prohibited.
+#
+# COPYRIGHT 2025 anyui Team
+# All rights reserved.
+#
+# https://anyui.tech/
+#
+# Author: anyui Team
+#
+import os
+import sys
+
+ROOT_DIR = os.getcwd()
+
+OBJ_DIR = os.path.join(ROOT_DIR, "build", "obj")
+LIB_DIR = os.path.join(ROOT_DIR, "build", "lib")
+BIN_DIR = os.path.join(ROOT_DIR, "build", "bin")
+THIRD_PARTY_DIR = os.path.join(ROOT_DIR, "lib", "x86")
+
+LVGL = "lvgl"
+LVGL_DIR = os.path.join(ROOT_DIR, LVGL)
+
+SIMULATOR = "simulator"
+SIMULATOR_DIR = os.path.join(ROOT_DIR, SIMULATOR)
+
+GENERATED = "generated"
+GENERATED_DIR = os.path.join(ROOT_DIR, GENERATED)
+
+SDK = "sdk"
+SDK_DIR = os.path.join(ROOT_DIR, SDK)
+
+SDL2 = "SDL2"
+SDL2_INC_DIR = os.path.join(SIMULATOR_DIR, SDL2, "i686-w64-mingw32", "include")
+# SDL2_LIB_DIR = os.path.join(SIMULATOR_DIR, SDL2, "i686-w64-mingw32", "lib")
+
+# 创建编译环境
+# baseEnv = DefaultEnvironment(tools=["mingw"])
+baseEnv = DefaultEnvironment()
+
+if sys.platform == "win32":
+    baseEnv.Tool("mingw")
+    # 设置编译器和链接器
+    baseEnv["CC"] = "gcc"
+    baseEnv["CXX"] = "g++"
+    baseEnv["AR"] = "ar"
+    baseEnv["RANLIB"] = "ranlib"
+
+# 编译选项
+baseEnv.Append(
+    CFLAGS=[
+        "-O2",  # 优化级别
+        "-g",  # 生成调试信息
+        "-Wall",  # 启用所有警告
+        "-Wextra",  # 启用额外警告
+        "-std=gnu99",  # C语言标准
+        "-fno-builtin",  # 禁用内置函数
+        "-fno-exceptions",  # 禁用异常处理
+        "-Wno-unused-parameter",
+    ],
+    CXXFLAGS=[
+        "-O2",
+        "-g",
+        "-Wall",
+        "-Wextra",
+        "-std=gnu++17",  # C++语言标准
+        "-fno-builtin",
+        "-fno-exceptions",
+        "-fno-rtti",  # 禁用RTTI
+        "-Wno-unused-parameter",
+    ],
+    CPPDEFINES=[
+        "LV_CONF_INCLUDE_SIMPLE",  # 使用简单的配置包含方式
+        "LV_BUILD_TEST=0",  # 禁用测试构建
+        "LV_BUILD_EXAMPLES=0",  # 禁用示例构建
+    ],
+    CPPPATH=[
+        ROOT_DIR,
+        LVGL_DIR,  # LVGL根目录
+        SDK_DIR,
+        SIMULATOR_DIR,
+    ],
+)
+
+if sys.platform == "win32":
+    baseEnv.Append(CPPPATH=[SDL2_INC_DIR])
+
+
+def collect_source_files(dir_path: str, suffix: str | tuple[str, ...]):
+    source_files = []
+    for root, dirs, files in os.walk(dir_path):
+        for file in files:
+            if file.endswith(suffix):
+                source_files.append(os.path.join(root, file))
+    return source_files
+
+
+def make_library(env, name: str, srcs: list[str]) -> str:
+    objs = []
+
+    for src_file in srcs:
+        # 计算对象文件路径
+        rel_path = os.path.relpath(src_file, ROOT_DIR)
+        obj_file = os.path.join(OBJ_DIR, os.path.splitext(rel_path)[0] + ".o")
+        obj = env.Object(target=obj_file, source=src_file)
+        objs.append(obj)
+
+    lib_file = os.path.join(LIB_DIR, name)
+    # return env.Library(lib_file, objs)
+    return env.StaticLibrary(target=lib_file, source=objs)
+
+
+lvgl_libs = [
+    make_library(
+        baseEnv, lib, collect_source_files(os.path.join(LVGL_DIR, "src", lib), ".c")
+    )
+    for lib in [
+        "core",
+        "display",
+        "draw",
+        "drivers",
+        "font",
+        "indev",
+        "layouts",
+        "libs",
+        "misc",
+        "osal",
+        "others",
+        "stdlib",
+        "themes",
+        "tick",
+        "widgets",
+    ]
+]
+
+lvgl_objs = baseEnv.Object(
+    target=os.path.join(OBJ_DIR, "lvgl", "src", "lv_init.o"),
+    source=os.path.join(LVGL_DIR, "src", "lv_init.c"),
+)
+simulator_sconscript = os.path.join(SIMULATOR_DIR, "SConscript")
+simulator_obj_dir = os.path.join(OBJ_DIR, SIMULATOR)
+simulator_objs = baseEnv.SConscript(
+    simulator_sconscript, variant_dir=simulator_obj_dir, duplicate=0
+)
+
+env_thorvg = baseEnv.Clone()
+env_thorvg.Append(
+    CPPPATH=[
+        os.path.join(LVGL_DIR, "src", "libs", "thorvg"),
+        os.path.join(LVGL_DIR, "src", "others", "vg_lite_tvg"),
+    ],
+    CPPDEFINES=[
+        "THORVG_CAPI",  # 启用ThorVG C API
+        "THORVG_STATIC",  # 静态库构建
+        "THORVG_NO_THREAD",  # 禁用多线程
+        "LV_USE_THORVG",  # 启用LVGL ThorVG支持
+    ],
+)
+
+THORVG_DIR = os.path.join(
+    LVGL_DIR, "src", "libs", "thorvg"
+)  #   <‑‑ adjust if you keep ThorVG elsewhere
+
+TVG_DIR = os.path.join(LVGL_DIR, "src", "others", "vg_lite_tvg")
+
+thorvg_srcs = collect_source_files(THORVG_DIR, ".cpp")
+tvg_srcs = collect_source_files(TVG_DIR, ".cpp")
+thorvg_lib = make_library(env_thorvg, "lvgl_thorvg", thorvg_srcs + tvg_srcs)
+
+ui_libs = [
+    make_library(baseEnv, lib, collect_source_files(os.path.join(ROOT_DIR, lib), ".c"))
+    for lib in [
+        "generated",
+        "sdk",
+    ]
+]
+
+target_env = baseEnv.Clone()
+# Force linker to use g++
+# target_env.Tool("g++")
+target_env["LINK"] = "g++"
+
+target_env.Append(
+    CPPPATH=[
+        ROOT_DIR,
+        LVGL_DIR,  # LVGL根目录
+        SDK_DIR,
+        SIMULATOR_DIR,
+    ],
+    LIBPATH=[LIB_DIR],
+    LIBS=lvgl_libs + ui_libs + [thorvg_lib, "stdc++", "SDL2"],
+)
+
+# What --start-group does
+# With GNU ld and MinGW it tells the linker to iterate over all the archives inside the group until every cross‑reference is resolved.
+# Apple ld64 already does an extra pass automatically, so you usually don’t need the option on macOS.
+if sys.platform == "win32":
+    target_env.Append(
+        LINKFLAGS=["-Wl,--start-group"],
+    )
+
+target_env.Program(
+    target=os.path.join(BIN_DIR, SIMULATOR),
+    source=simulator_objs + lvgl_objs,
+)
+
+if sys.platform == "win32":
+    if not os.path.exists(os.path.join(BIN_DIR, "SDL2.dll")):
+        target_env.Install(
+            BIN_DIR, os.path.join(SIMULATOR_DIR, "SDL2", "lib", "SDL2.dll")
+        )
