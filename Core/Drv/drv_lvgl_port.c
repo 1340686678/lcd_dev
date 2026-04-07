@@ -6,7 +6,8 @@
 #include "main.h"
 
 // 显示刷新回调函数
-void lvgl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map) {
+void lvgl_flush_cb(lv_display_t * disp, const lv_area_t * area, uint8_t * px_map)
+{
     // 调用现有LCD驱动刷新函数
     lcd_fill(area->x1, area->y1, area->x2, area->y2, (uint16_t *)px_map);
     
@@ -32,7 +33,8 @@ void lvgl_display_init(void) {
 	lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_PARTIAL);
 }
 
-void lvgl_touch_read_cb(lv_indev_t * indev, lv_indev_data_t * data) {
+void lvgl_touch_read_cb(lv_indev_t * indev, lv_indev_data_t * data)
+{
     // 假设现有驱动提供此接口
 		if (drv_lcd_touch_have_data() == true)
 		{
@@ -50,8 +52,9 @@ void lvgl_touch_read_cb(lv_indev_t * indev, lv_indev_data_t * data) {
 }
 
 // 触控初始化函数
-void lvgl_touch_init(void) {
-		while (drv_lcd_touch_init() != 0);
+void lvgl_touch_init(void)
+{
+	while (drv_lcd_touch_init() != 0);
 
     // 创建输入设备
     lv_indev_t * indev = lv_indev_create();
