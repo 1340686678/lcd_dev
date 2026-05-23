@@ -251,7 +251,7 @@ SECTIONS
     libgcc.a:* ( * )
   }
 
-	/* TODO 自定义 DMA 缓冲区 section */
+	/* TODO 自定义 DMA 缓冲区 section (SRAM3: 0x30000000, DMA1/DMA2 均可访问) */
 	.dma_buffer (NOLOAD) :
 	{
 		. = ALIGN(4);
@@ -261,7 +261,7 @@ SECTIONS
 		_edma_buffer = .;     /* 定义 section 结束符号 */
 	} >RAM_D2
 
-  
+	/* 自定义通用缓冲区 section (AXI SRAM: 0x24000000, 高带宽) */
 	.ram_buffer (NOLOAD) :
 	{
 		. = ALIGN(4);

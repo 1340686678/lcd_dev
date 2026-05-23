@@ -34,6 +34,7 @@
 #include "drv_uart.h"
 #include "drv_spi.h"
 #include "drv_i2c.h"
+#include <stdint.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -162,6 +163,27 @@ int main(void)
 		//  	APP_INFO("POS1:x:%d,y:%d\r\n",data_list[0].x,data_list[0].y);
 		//  	APP_INFO("POS2:x:%d,y:%d\r\n",data_list[1].x,data_list[1].y);
 		//  }
+
+    extern lv_obj_t * screen_1;
+    
+    static uint8_t i = 0;
+
+    if (i == 0) {
+      lv_obj_set_style_bg_color(screen_1, lv_color_hex(0xff0000), LV_PART_MAIN | LV_STATE_DEFAULT); 
+    }
+    else if (i == 1) {
+      lv_obj_set_style_bg_color(screen_1, lv_color_hex(0x00ff00), LV_PART_MAIN | LV_STATE_DEFAULT); 
+    }
+    else if (i == 2) {
+      lv_obj_set_style_bg_color(screen_1, lv_color_hex(0x0000ff), LV_PART_MAIN | LV_STATE_DEFAULT); 
+    }
+
+    i++;
+    if (i > 2) {
+      i = 0;
+    }
+
+
     lv_timer_handler();
     HAL_Delay(5);
   }

@@ -1,5 +1,6 @@
 #include "drv_lcd.h"
 
+#include "comm_port_obj.h"
 #include "global.h"
 
 #include "drv_spi.h"
@@ -42,7 +43,7 @@ static void spi_transfer(uint8_t *tx, uint8_t *rx, const size_t len)
 	memcpy(spi_tx_buffer, tx, len);
 
 	comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
-		.comm_work_mode = COMM_WORK_DMA,
+		.comm_work_mode = COMM_WORK_POLL,
 		.send_msg = spi_tx_buffer,
 		.send_len = len,
 		.recv_msg = spi_rx_buffer,
@@ -289,6 +290,8 @@ void lcd_refresh(void)
 {
 	lcd_set_windows(0, 0, LCD_W - 1, LCD_H - 1);
 
+	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_32BIT;
+	comm_port_spi3.init_func(&comm_port_spi3);
 	LCD_CS_CLR;
 	LCD_RS_SET;
 	uint16_t dis_line = 0;
@@ -303,24 +306,34 @@ void lcd_refresh(void)
 			dis_line = (LCD_H - i);
 		}
 
-		memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
-		memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
+		// memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
+		// memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
 		memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
+		
+		// 翻转 32-bit 小端序 → 大端序，使 SPI MSB 先发时字节顺序正确
+		uint32_t word_count = (LCD_W * 2 * dis_line) / 4;
+		uint32_t *buf32 = (uint32_t *)spi_tx_buffer;
+		for (uint32_t j = 0; j < word_count; j++)
+		{
+			buf32[j] = __REV(buf32[j]);
+		}
 		
 		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
 			.comm_work_mode = COMM_WORK_DMA,
 			.send_msg = spi_tx_buffer,
-			.send_len = LCD_W * 2 * dis_line,
+			.send_len = LCD_W * 2 * dis_line / 4,
 			.recv_msg = spi_rx_buffer,
-			.recv_len = LCD_W * 2 * dis_line,
+			.recv_len = LCD_W * 2 * dis_line / 4,
 			.comm_time = 1000,
 		});
 
 
 		i += dis_line;
 	}
-
 	LCD_CS_SET;
+
+	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_8BIT;
+	comm_port_spi3.init_func(&comm_port_spi3);
 }
 
 /***************************************************************
