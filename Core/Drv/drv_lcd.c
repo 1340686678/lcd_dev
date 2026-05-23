@@ -290,6 +290,7 @@ void lcd_refresh(void)
 {
 	lcd_set_windows(0, 0, LCD_W - 1, LCD_H - 1);
 
+#if 1
 	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_32BIT;
 	comm_port_spi3.init_func(&comm_port_spi3);
 	LCD_CS_CLR;
@@ -308,14 +309,15 @@ void lcd_refresh(void)
 
 		// memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
 		// memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
-		memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
+		// memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
 		
 		// 翻转 32-bit 小端序 → 大端序，使 SPI MSB 先发时字节顺序正确
 		uint32_t word_count = (LCD_W * 2 * dis_line) / 4;
 		uint32_t *buf32 = (uint32_t *)spi_tx_buffer;
+		uint32_t *buf32_gpu = (uint32_t *)(g_lcd_dis_buf + i * LCD_W * 2); 
 		for (uint32_t j = 0; j < word_count; j++)
 		{
-			buf32[j] = __REV(buf32[j]);
+			buf32[j] = __REV(buf32_gpu[j]);
 		}
 		
 		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
@@ -334,6 +336,38 @@ void lcd_refresh(void)
 
 	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_8BIT;
 	comm_port_spi3.init_func(&comm_port_spi3);
+#else
+	LCD_CS_CLR;
+	LCD_RS_SET;
+	uint16_t dis_line = 0;
+	for(uint32_t i = 0; i < LCD_H;)
+	{
+		if ((i + DIS_LINE) < LCD_H)
+		{
+			dis_line = DIS_LINE;
+		}
+		else
+		{
+			dis_line = (LCD_H - i);
+		}
+
+		// memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
+		// memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
+		memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
+
+		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
+			.comm_work_mode = COMM_WORK_DMA,
+			.send_msg = spi_tx_buffer,
+			.send_len = LCD_W * 2 * dis_line,
+			.recv_msg = spi_rx_buffer,
+			.recv_len = LCD_W * 2 * dis_line,
+			.comm_time = 1000,
+		});
+
+		i += dis_line;
+	}
+	LCD_CS_SET;
+#endif
 }
 
 /***************************************************************

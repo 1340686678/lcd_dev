@@ -3,6 +3,8 @@
 #include "global.h"
 
 #include "drv_sys_tick.h"
+#include "stm32h7xx_hal_dma.h"
+#include "stm32h7xx_hal_spi.h"
 
 #define DMA_BUFFER_SECTION __attribute__((section(".dma_buffer")))
 
@@ -359,7 +361,7 @@ static int hard_4_wire_community(struct comm_port_obj_t* obj, comm_msg_param_t p
 																			param.send_msg,
 																			param.recv_msg,
 																			param.send_len);
-
+#if 1
 		// 等待传输完成
 		DRV_SYS_TICK_TYPE start_t = drv_sys_tick_get();
 		while(HAL_SPI_GetState(HANDLE) != HAL_SPI_STATE_READY)
@@ -370,6 +372,10 @@ static int hard_4_wire_community(struct comm_port_obj_t* obj, comm_msg_param_t p
 				break;
 			}
 		}
+#else
+		while (__HAL_DMA_GET_COUNTER(obj->init_param.work_param.handle.spi_handle.spi_4_wire_handle->hdmatx) > 0) {
+		}
+#endif
 	}
 	
 	SPI_CS_H;
