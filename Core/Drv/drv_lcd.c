@@ -6,6 +6,7 @@
 #include "drv_spi.h"
 
 #include "main.h"
+#include "stm32h7xx_hal_dma.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -26,6 +27,18 @@ static uint8_t spi_rx_buffer[BUFFER_SIZE] = {0};
 RAM_BUFFER_SECTION __attribute__((aligned(32)))
 static uint8_t g_lcd_dis_buf[LCD_W * LCD_H * 2] = {0};
 
+/* 轻量级 DMA 数据宽度切换，仅修改 CR 的 PSIZE/MSIZE，替代 HAL_DMA_Init */
+static inline void dma_switch_width(DMA_HandleTypeDef *hdma,
+                                     uint32_t periph_width,
+                                     uint32_t mem_width)
+{
+    /* 同步 hdma->Init 字段 */
+    hdma->Init.PeriphDataAlignment = periph_width;
+    hdma->Init.MemDataAlignment = mem_width;
+		
+		HAL_DMA_Init(hdma);
+}
+
 /***************************************************************
  * Name:	 spi_transfer()
  * Input : g_spi_fd:SPI设备描述符 tx:发送数据 rx:接收数据 len:发送数据长度(单位，字节)
@@ -38,8 +51,8 @@ static uint8_t g_lcd_dis_buf[LCD_W * LCD_H * 2] = {0};
  ***************************************************************/
 static void spi_transfer(uint8_t *tx, uint8_t *rx, const size_t len)
 {
-	memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
-	memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
+	memset(spi_tx_buffer, 0x00, len);
+	memset(spi_rx_buffer, 0x00, len);
 	memcpy(spi_tx_buffer, tx, len);
 
 	comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
@@ -290,9 +303,10 @@ void lcd_refresh(void)
 {
 	lcd_set_windows(0, 0, LCD_W - 1, LCD_H - 1);
 
-#if 1
+	uint32_t data_size = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize;
 	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_32BIT;
 	comm_port_spi3.init_func(&comm_port_spi3);
+
 	LCD_CS_CLR;
 	LCD_RS_SET;
 	uint16_t dis_line = 0;
@@ -307,10 +321,6 @@ void lcd_refresh(void)
 			dis_line = (LCD_H - i);
 		}
 
-		// memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
-		// memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
-		// memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
-		
 		// 翻转 32-bit 小端序 → 大端序，使 SPI MSB 先发时字节顺序正确
 		uint32_t word_count = (LCD_W * 2 * dis_line) / 4;
 		uint32_t *buf32 = (uint32_t *)spi_tx_buffer;
@@ -323,51 +333,18 @@ void lcd_refresh(void)
 		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
 			.comm_work_mode = COMM_WORK_DMA,
 			.send_msg = spi_tx_buffer,
-			.send_len = LCD_W * 2 * dis_line / 4,
+			.send_len = word_count,
 			.recv_msg = spi_rx_buffer,
-			.recv_len = LCD_W * 2 * dis_line / 4,
+			.recv_len = word_count,
 			.comm_time = 1000,
 		});
-
 
 		i += dis_line;
 	}
 	LCD_CS_SET;
 
-	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = SPI_DATASIZE_8BIT;
+	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = data_size;
 	comm_port_spi3.init_func(&comm_port_spi3);
-#else
-	LCD_CS_CLR;
-	LCD_RS_SET;
-	uint16_t dis_line = 0;
-	for(uint32_t i = 0; i < LCD_H;)
-	{
-		if ((i + DIS_LINE) < LCD_H)
-		{
-			dis_line = DIS_LINE;
-		}
-		else
-		{
-			dis_line = (LCD_H - i);
-		}
-
-		// memset(spi_tx_buffer, 0x00, sizeof(spi_tx_buffer));
-		// memset(spi_rx_buffer, 0x00, sizeof(spi_rx_buffer));
-		memcpy(spi_tx_buffer, g_lcd_dis_buf + i * LCD_W * 2, LCD_W * 2 * dis_line);
-
-		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
-			.comm_work_mode = COMM_WORK_DMA,
-			.send_msg = spi_tx_buffer,
-			.send_len = LCD_W * 2 * dis_line,
-			.recv_msg = spi_rx_buffer,
-			.recv_len = LCD_W * 2 * dis_line,
-			.comm_time = 1000,
-		});
-
-		i += dis_line;
-	}
-	LCD_CS_SET;
-#endif
 }
 
 /***************************************************************
@@ -623,6 +600,17 @@ int drv_lcd_init(void)
 	lcd_w_cmd(0x29);
 
 	lcd_direction(0);	//设置LCD显示方向
+
+	/* LCD 初始化完成后，将 DMA 和 SPI 设置为 32bit，后续 lcd_refresh 直接使用 */
+	{
+		DMA_HandleTypeDef *hdma_tx = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->hdmatx;
+		DMA_HandleTypeDef *hdma_rx = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->hdmarx;
+		SPI_HandleTypeDef *hspi = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle;
+
+		dma_switch_width(hdma_tx, DMA_PDATAALIGN_WORD, DMA_MDATAALIGN_WORD);
+		dma_switch_width(hdma_rx, DMA_PDATAALIGN_WORD, DMA_MDATAALIGN_WORD);
+
+	}
 
 	return 0;
 }
