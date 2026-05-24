@@ -4,9 +4,11 @@
 #include "global.h"
 
 #include "drv_spi.h"
+#include "drv_sys_tick.h"
 
 #include "main.h"
 #include "stm32h7xx_hal_dma.h"
+#include "stm32h7xx_hal_spi.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -16,15 +18,12 @@
 #define DMA_BUFFER_SECTION __attribute__((section(".dma_buffer")))
 #define RAM_BUFFER_SECTION __attribute__((section(".ram_buffer")))
 
-#define DIS_LINE 107
-#define BUFFER_SIZE (LCD_W * 2 * DIS_LINE)
-// 定义 DMA 缓冲区
 DMA_BUFFER_SECTION __attribute__((aligned(32))) 
-static uint8_t spi_tx_buffer[BUFFER_SIZE] = {0};
+static uint8_t spi_tx_buffer[LCD_W * LCD_H * 2] = {0};
 DMA_BUFFER_SECTION __attribute__((aligned(32)))
-static uint8_t spi_rx_buffer[BUFFER_SIZE] = {0};
+static uint8_t spi_rx_buffer[8] = {0};
 
-RAM_BUFFER_SECTION __attribute__((aligned(32)))
+RAM_BUFFER_SECTION __attribute__((aligned(32))) 
 static uint8_t g_lcd_dis_buf[LCD_W * LCD_H * 2] = {0};
 
 /* 轻量级 DMA 数据宽度切换，仅修改 CR 的 PSIZE/MSIZE，替代 HAL_DMA_Init */
@@ -309,38 +308,30 @@ void lcd_refresh(void)
 
 	LCD_CS_CLR;
 	LCD_RS_SET;
-	uint16_t dis_line = 0;
-	for(uint32_t i = 0; i < LCD_H;)
+	
+	// 翻转 32-bit 小端序 → 大端序，使 SPI MSB 先发时字节顺序正确
+	uint32_t *buf32 = (uint32_t *)spi_tx_buffer;
+	uint32_t *buf32_gpu = (uint32_t *)g_lcd_dis_buf; 
+	for (uint32_t j = 0; j < sizeof(g_lcd_dis_buf) / sizeof(uint32_t); j++)
 	{
-		if ((i + DIS_LINE) < LCD_H)
-		{
-			dis_line = DIS_LINE;
-		}
-		else
-		{
-			dis_line = (LCD_H - i);
-		}
-
-		// 翻转 32-bit 小端序 → 大端序，使 SPI MSB 先发时字节顺序正确
-		uint32_t word_count = (LCD_W * 2 * dis_line) / 4;
-		uint32_t *buf32 = (uint32_t *)spi_tx_buffer;
-		uint32_t *buf32_gpu = (uint32_t *)(g_lcd_dis_buf + i * LCD_W * 2); 
-		for (uint32_t j = 0; j < word_count; j++)
-		{
-			buf32[j] = __REV(buf32_gpu[j]);
-		}
-		
-		comm_port_spi3.community_func(&comm_port_spi3, (comm_msg_param_t){
-			.comm_work_mode = COMM_WORK_DMA,
-			.send_msg = spi_tx_buffer,
-			.send_len = word_count,
-			.recv_msg = spi_rx_buffer,
-			.recv_len = word_count,
-			.comm_time = 1000,
-		});
-
-		i += dis_line;
+		buf32[j] = __REV(buf32_gpu[j]);
 	}
+	SPI_HandleTypeDef *hspi = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle;
+
+	HAL_SPI_Transmit_DMA(	hspi,
+												spi_tx_buffer,
+												sizeof(spi_tx_buffer) / 4);
+
+	// 等待传输完成
+	DRV_SYS_TICK_TYPE start_t = drv_sys_tick_get();
+	while(HAL_SPI_GetState(hspi) != HAL_SPI_STATE_READY)
+	{
+		if (drv_sys_tick_pass(start_t) > 1000)
+		{
+			break;
+		}
+	}
+		
 	LCD_CS_SET;
 
 	comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->Init.DataSize = data_size;
@@ -605,7 +596,6 @@ int drv_lcd_init(void)
 	{
 		DMA_HandleTypeDef *hdma_tx = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->hdmatx;
 		DMA_HandleTypeDef *hdma_rx = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle->hdmarx;
-		SPI_HandleTypeDef *hspi = comm_port_spi3.init_param.work_param.handle.spi_handle.spi_4_wire_handle;
 
 		dma_switch_width(hdma_tx, DMA_PDATAALIGN_WORD, DMA_MDATAALIGN_WORD);
 		dma_switch_width(hdma_rx, DMA_PDATAALIGN_WORD, DMA_MDATAALIGN_WORD);

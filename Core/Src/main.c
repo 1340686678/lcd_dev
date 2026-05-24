@@ -139,31 +139,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    //  uint16_t color;
-		//  color = RED;
-		//  lcd_fill(0,0,239,319,&color);
-		//  lcd_refresh();
-		//  APP_INFO("RED\r\n");
-
-		//  color = GREEN;
-		//  lcd_fill(0,0,239,319,&color);
-		//  lcd_refresh();
-		//  APP_INFO("GREEN\r\n");
-
-		//  color = BLUE;
-		//  lcd_fill(0,0,239,319,&color);
-		//  lcd_refresh();s
-		//  APP_INFO("BLUE\r\n");
-
-		//  if (drv_lcd_touch_have_data() == true)
-		//  {
-		//  	drv_lcd_clear_have_data_flag();
-		//  	touch_pos_t data_list[2] = {0};
-		//  	drv_lcd_touch_pos_data(data_list);
-		//  	APP_INFO("POS1:x:%d,y:%d\r\n",data_list[0].x,data_list[0].y);
-		//  	APP_INFO("POS2:x:%d,y:%d\r\n",data_list[1].x,data_list[1].y);
-		//  }
-
     extern lv_obj_t * screen_1;
     
     static uint8_t i = 0;
